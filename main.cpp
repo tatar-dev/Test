@@ -9,6 +9,7 @@
 #include <QByteArray>
 #include <QFileInfo>
 #include <QTimer>
+#include <QTime>
 #include <QRadioButton>
 #include <QVBoxLayout>
 
@@ -43,7 +44,8 @@ int main(int argc, char *argv[])
     QRadioButton *singleRunRadioButton = new QRadioButton("Разовый запуск");
     QRadioButton *timerRunRadioButton = new QRadioButton("Запуск по таймеру");
     QLineEdit *timerIntervalLineEdit = new QLineEdit;
-    QLabel *timerIntervalLabel = new QLabel("Интервал (секунды):");
+    QLabel *timerIntervalLabel = new QLabel("Интервал (милисекунды):");
+    QLineEdit *timerInterval = new QLineEdit;
 
     // Обработчик события для кнопки "Обзор" входного файла
     QObject::connect(inputFileButton, &QPushButton::clicked, [&] {
@@ -56,13 +58,11 @@ int main(int argc, char *argv[])
         QString outputFile = QFileDialog::getSaveFileName(nullptr, "Выберите выходной файл", QString(), "Text Files (*.txt);;Binary Files (*.bin)");
         outputFileLineEdit->setText(outputFile);
     });
-
     // Обработчик события для кнопки "Зашифровать"
     QObject::connect(encryptButton, &QPushButton::clicked, [&] {
         QString inputFile = inputFileLineEdit->text();
         QString outputFileName = outputFileLineEdit->text();
         QString fileExtension = QFileInfo(inputFile).suffix().toLower();
-        bool ok;
         QByteArray xorKey = QByteArray::fromHex(keyLineEdit->text().toUtf8());
 
         if (xorKey.size() != 8) {
@@ -84,16 +84,20 @@ int main(int argc, char *argv[])
             QMessageBox msgBox;
             msgBox.setText("Файл с именем '" + outputFileName + "' уже существует.");
             msgBox.setInformativeText("Выберите действие:");
-            msgBox.addButton("Перезаписать", QMessageBox::YesRole);
-            msgBox.addButton("Добавить счетчик к имени файла", QMessageBox::NoRole);
-            msgBox.setDefaultButton(msgBox.addButton("Отмена", QMessageBox::RejectRole));
-
-            int choice = msgBox.exec();
-            if (choice == QMessageBox::RejectRole) {
+            QPushButton *edit=msgBox.addButton("Перезаписать", QMessageBox::YesRole);
+            QPushButton *exit=msgBox.addButton("Отмена", QMessageBox::RejectRole);
+            QPushButton *rename=msgBox.addButton( "Добавить счетчик к файлу", QMessageBox::NoRole);
+            int choice ;
+            choice = msgBox.exec();
+            if(msgBox.clickedButton()==exit){
                 return;
-            } else if (choice == QMessageBox::YesRole) {
+            }
+            else if(msgBox.clickedButton()==edit){
+                QMessageBox::information(nullptr, "Выполняется", "Операция  XOR с ключом и перезапись файла  начата для файла ." + fileExtension);
                 QFile::remove(outputFileName);
-            } else {
+            }
+            else if(msgBox.clickedButton()==rename){
+                QMessageBox::information(nullptr, "Выполняется", "Операция  XOR с ключом и перезапись с счетчиком  начата для файла ." + fileExtension);
                 int counter = 1;
                 QString baseName = QFileInfo(outputFileName).baseName();
                 QString extension = QFileInfo(outputFileName).suffix();
@@ -120,22 +124,42 @@ int main(int argc, char *argv[])
             QMessageBox::critical(nullptr, "Ошибка", "Не удается открыть выходной файл.");
             return;
         }
+        if(timerRunRadioButton->isChecked()){
+                while (!input.atEnd()) {
+                QMessageBox::critical(nullptr, "Ошибка", "0.");
+                QByteArray data = input.read(4096);
+                xorWithKey(data, xorKey);
+                output.write(data);
+                }
+                input.close();
+                output.close();
+            int time=timerIntervalLineEdit->text().toInt();
+                QTimer timer;
+                 timer.start(time);
+                while(timer.remainingTime()>0){
+                 output.open(QIODevice::ReadOnly);
+                     while (!output.atEnd()) {
+                        QByteArray data_t=output.read(4096);
+                        output.close();
+                         xorWithKey(data_t, xorKey);
+                        output.open(QIODevice::WriteOnly);
+                         output.write(data_t);
+                    }
+                    output.close();
+                }
 
+        }
+        else if(singleRunRadioButton->isChecked()){
         while (!input.atEnd()) {
             QByteArray data = input.read(4096);
             xorWithKey(data, xorKey);
             output.write(data);
         }
-
         input.close();
         output.close();
+        }
 
         QMessageBox::information(nullptr, "Успех", "Операция XOR с ключом завершена для файла ." + fileExtension);
-    });
-
-    // Обработчик события для кнопки "Запуск по таймеру"
-    QObject::connect(timerRunRadioButton, &QRadioButton::toggled, [&] (bool checked) {
-        timerIntervalLineEdit->setEnabled(checked);
     });
 
     // Создаем макет для размещения виджетов
@@ -158,12 +182,6 @@ int main(int argc, char *argv[])
     QWidget *centralWidget = new QWidget;
     centralWidget->setLayout(layout);
     window.setCentralWidget(centralWidget);
-
-    // Создаем таймер для запуска операции XOR по интервалу
-    QTimer timer;
-    QObject::connect(&timer, &QTimer::timeout, [&] {
-        encryptButton->click();
-    });
 
     window.show();
 
